@@ -58,7 +58,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/results.json data/results.csv report.html
-          if git diff --cached --quiet; then echo "변경 없음"; else git commit -m "데이터 갱신 $(date -u +%Y-%m-%d)" && git push; fi
+          if git diff --cached --quiet; then
+            echo "변경 없음"
+          else
+            git commit -m "데이터 갱신 $(date -u +%Y-%m-%d)"
+            git pull --rebase origin main     # 실행 중에 main이 앞서 나갔어도 푸시가 거절되지 않게 한다
+            git push origin HEAD:main
+          fi
       - name: 완료 표시
         id: done
         if: steps.collect.outputs.reached == 'true'
