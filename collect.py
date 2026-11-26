@@ -171,8 +171,8 @@ def fetch_molit(sido_names):
                 "srhFromAmount": "", "srhToAmount": "", "srhLrArea": "",
             })
             if b'"NO"' not in raw[:4000]:
-                print(f"  [실패] {name}: CSV가 아닌 응답 ({len(raw)}바이트)")
-                continue
+                # 일부 시도만 빠진 채 매칭하면 결과가 조용히 줄어든다: 실패로 처리해 스냅샷으로 넘어가게 한다
+                raise ConnectionError(f"국토부 {name}: CSV가 아닌 응답 ({len(raw)}바이트)")
             f.write_bytes(raw)
             print(f"  국토부 {name}: {len(raw) / 1e6:.1f}MB 저장")
             time.sleep(2.0)
