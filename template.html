@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>온비드 공매 아파트 저평가 스크리너</title>
+<style>
+.viz-root {
+  color-scheme: light;
+  --page: #f9f9f9; --surface: #ffffff; --text: #191919; --text2: #666666;
+  --grid: #e7e7e7; --axis: #c2c2c2; --border: rgba(11,11,11,0.10); --wash: rgba(11,11,11,0.04);
+  --s1: #257de0; --s2: #f47230; --s3: #00b894; --good-text: #006c10; --critical: #dc3c3d;
+}
+@media (prefers-color-scheme: dark) {
+  .viz-root {
+    color-scheme: dark;
+    --page: #0b0b0b; --surface: #191919; --text: #efefef; --text2: #9c9c9c;
+    --grid: #303030; --axis: #474747; --border: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.06);
+    --s1: #338ced; --s2: #e76624; --s3: #00a888; --good-text: #53c556; --critical: #dc3c3d;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--text);
+  font: 14px/1.55 system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
+main { max-width: 1180px; margin: 0 auto; padding: 28px 20px 60px; }
+h1 { font-size: 24px; margin: 0 0 4px; }
+h2 { font-size: 16px; margin: 0 0 2px; }
+.sub { color: var(--text2); margin: 0; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; margin-top: 16px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-top: 18px; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+.tile .label { color: var(--text2); font-size: 13px; }
+.tile .value { font-size: 28px; font-weight: 600; line-height: 1.25; }
+.tile .note { color: var(--text2); font-size: 12px; }
+.filters { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin-top: 18px; }
+.filters label { color: var(--text2); font-size: 13px; display: flex; align-items: center; gap: 6px; }
+select, input[type=checkbox] { font: inherit; color: var(--text); accent-color: var(--s1); }
+select { background: var(--surface); border: 1px solid var(--axis); border-radius: 6px; padding: 4px 8px; }
+.count { margin-left: auto; color: var(--text2); font-size: 13px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--text2); font-size: 13px; margin: 8px 0 4px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.dot.hollow { background: var(--surface) !important; border: 2px solid var(--text2); }
+.sw { width: 12px; height: 10px; border-radius: 2px; display: inline-block; }
+svg text { fill: var(--text2); font-size: 12px; font-variant-numeric: tabular-nums; }
+#scatter { width: 100%; }
+.bars { margin-top: 10px; }
+.brow { display: grid; grid-template-columns: minmax(120px, 230px) 1fr 270px; gap: 12px; align-items: center; padding: 5px 0; cursor: pointer; border-radius: 6px; }
+.brow:hover, .brow.sel { background: var(--wash); }
+.brow .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 6px; }
+.brow .val { color: var(--text2); font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; padding-right: 6px; }
+.brow .val b { color: var(--text); font-weight: 600; }
+.track { position: relative; height: 16px; }
+.seg { position: absolute; top: 0; height: 16px; }
+.seg.bid { background: var(--s1); border-radius: 0 4px 4px 0; }
+.seg.dep { background: var(--s2); border-radius: 0 4px 4px 0; }
+.mark { position: absolute; top: -4px; bottom: -4px; width: 1px; background: var(--axis); }
+.baxis { display: grid; grid-template-columns: minmax(120px, 230px) 1fr 270px; gap: 12px; color: var(--text2); font-size: 12px; }
+.baxis .ticks { position: relative; height: 18px; }
+.baxis .ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.tablewrap { overflow-x: auto; margin-top: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+td:first-child { min-width: 210px; }
+th, td { padding: 7px 8px; border-bottom: 1px solid var(--grid); text-align: left; vertical-align: top; }
+th { color: var(--text2); font-weight: 600; white-space: nowrap; cursor: pointer; user-select: none; position: sticky; top: 0; background: var(--surface); }
+th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tbody tr.row { cursor: pointer; }
+tbody tr.row:hover, tbody tr.row.sel { background: var(--wash); }
+td .small { color: var(--text2); font-size: 12px; }
+.pos { color: var(--good-text); font-weight: 600; }
+.chip { display: inline-block; border: 1px solid var(--border); background: var(--wash); border-radius: 999px; padding: 0 8px; font-size: 12px; margin: 1px 4px 1px 0; white-space: nowrap; }
+.detail td { background: var(--wash); }
+.detail .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px 24px; }
+.detail h3 { font-size: 13px; margin: 0 0 4px; }
+.detail ul { margin: 0; padding-left: 16px; }
+a { color: var(--s1); }
+#tip { position: fixed; pointer-events: none; background: var(--surface); color: var(--text); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,.14); max-width: 320px; display: none; z-index: 10; }
+#tip .t2 { color: var(--text2); }
+.notes li { margin-bottom: 4px; }
+button.more { font: inherit; background: var(--surface); color: var(--text); border: 1px solid var(--axis); border-radius: 6px; padding: 5px 12px; cursor: pointer; margin-top: 10px; }
+</style>
+</head>
+<body class="viz-root">
+<main>
+  <h1>온비드 공매 아파트 저평가 스크리너</h1>
+  <p class="sub" id="subtitle"></p>
+
+  <div class="tiles" id="tiles"></div>
+
+  <div class="filters">
+    <label>시도 <select id="fSido"></select></label>
+    <label>재산유형 <select id="fType">
+      <option value="">전체</option><option value="a">압류재산</option><option value="b">기타일반재산</option><option value="c">국유·공유·기타</option>
+    </select></label>
+    <label>비교 실거래 <select id="fN">
+      <option value="1">1건 이상</option><option value="2" selected>2건 이상</option><option value="3">3건 이상</option><option value="5">5건 이상</option>
+    </select></label>
+    <label>최저입찰가 <select id="fPrice">
+      <option value="0">전체</option><option value="1">1억 이하</option><option value="3">3억 이하</option><option value="5">5억 이하</option><option value="10">10억 이하</option>
+    </select></label>
+    <label><input type="checkbox" id="fTenant"> 임차인이 신고된 물건 제외</label>
+    <span class="count" id="count"></span>
+  </div>
+
+  <section class="card">
+    <h2>시세 대비 할인율</h2>
+    <p class="sub">점 하나가 물건 하나입니다. 위로 갈수록 최근 실거래 중앙값보다 최저입찰가가 낮습니다. 점을 누르면 아래 표에서 해당 물건이 열립니다.</p>
+    <div class="legend">
+      <span><i class="dot" style="background:var(--s1)"></i>압류재산 (세금 체납 공매)</span>
+      <span><i class="dot" style="background:var(--s2)"></i>기타일반재산 (신탁·금융기관 등)</span>
+      <span><i class="dot" style="background:var(--s3)"></i>국유·공유·기타</span>
+      <span><i class="dot hollow"></i>속이 빈 점: 임차인이 신고된 물건</span>
+    </div>
+    <div id="scatter"></div>
+  </section>
+
+  <section class="card">
+    <h2>할인율 상위 15건: 시세를 100으로 봤을 때</h2>
+    <p class="sub">세로선이 시세(100)입니다. 막대가 선에 못 미칠수록 싸고, 신고된 임차 보증금을 매수인이 전부 떠안는 최악의 경우를 주황색으로 이어 붙였습니다.</p>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--s1)"></i>최저입찰가</span>
+      <span><i class="sw" style="background:var(--s2)"></i>신고된 임차 보증금 (금액이 공개된 것만)</span>
+    </div>
+    <div class="bars" id="bars"></div>
+  </section>
+
+  <section class="card">
+    <h2>물건 목록</h2>
+    <p class="sub">머리글을 누르면 정렬됩니다. 행을 누르면 비교에 쓴 실거래, 입찰 일정, 임차인 정보가 열립니다. 같은 내용은 <a href="data/results.csv">data/results.csv</a>에도 있습니다.</p>
+    <div class="tablewrap"><table>
+      <thead><tr id="thead"></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table></div>
+    <button class="more" id="more" hidden></button>
+  </section>
+
+  <section class="card notes">
+    <h2>읽는 법과 한계</h2>
+    <ul>
+      <li><b>시세</b>는 같은 지번·같은 전용면적(±1㎡) 아파트의 국토부 실거래가 중앙값입니다. 최근 6개월 거래가 3건 이상이면 그 구간을, 아니면 최근 1년을 씁니다. 층·향·수리 상태는 반영하지 않습니다.</li>
+      <li><b>할인율이 큰 물건은 대부분 여러 번 유찰된 물건</b>입니다. 유찰이 반복된 데는 이유가 있는 경우가 많습니다. 대항력 있는 임차인의 보증금, 체납 관리비, 지분 매각, 명도 문제가 대표적입니다.</li>
+      <li><b>임차인 정보</b>는 압류재산에만 제공되며 감정평가서·배분요구서 기준입니다. 보증금이 공개되지 않은 임차인이 있으면 실제 부담은 표시보다 클 수 있습니다. 보증금을 실제로 인수하는지는 전입일과 말소기준권리의 선후, 배분요구 여부에 따라 달라지므로 공매재산명세서와 등기부로 확인해야 합니다.</li>
+      <li>기타일반재산(신탁 공매 등)은 임차인·권리 정보가 목록에 없습니다. 공고문을 직접 읽어야 합니다.</li>
+      <li>시세 비교가 안 된 물건은 최근 1년간 같은 지번의 실거래가 없었던 경우입니다(신축 미분양, 소규모 단지 등).</li>
+      <li>이 페이지는 1차 선별용이며 투자 권유가 아닙니다. 입찰 전 현장 확인과 권리분석이 필요합니다.</li>
+    </ul>
+  </section>
+</main>
+<div id="tip"></div>
+
+<script>
+const DATA = /*__DATA__*/null;
+const items = DATA.items, meta = DATA.meta;
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const won = v => v == null ? '–' : v >= 1e8 ? (v / 1e8).toFixed(2).replace(/\.?0+$/, '') + '억' : Math.round(v / 1e4).toLocaleString() + '만';
+const pct = v => v == null ? '–' : (v > 0 ? '−' : v < 0 ? '+' : '') + Math.abs(v * 100).toFixed(0) + '%';
+const grp = i => i.asset_type === '압류재산' ? 'a' : i.asset_type === '기타일반재산' ? 'b' : 'c';
+const color = { a: 'var(--s1)', b: 'var(--s2)', c: 'var(--s3)' };
+const tenants = i => (i.lease && i.lease.ok && i.lease.count) || 0;
+const shortName = i => {
+  const ho = (i.name.match(/(\d+)\s*호/) || [])[1];
+  const bd = (i.name.match(/(\d+)\s*동(?=\s|$)/) || [])[1];
+  const dong = i.region.split(' ').slice(-1)[0];
+  return (i.complex || dong) + (bd ? ' ' + bd + '동' : '') + (ho ? ' ' + ho + '호' : '');
+};
+const local = i => i.name.replace(/^\(\d+\)\s*/, '');
+
+const state = { sort: 'disc_cur', dir: -1, sel: null, limit: 60 };
+
+// ---------- 머리글·타일
+$('#subtitle').textContent =
+  `온비드 입찰기간 ${meta.bid_from} ~ ${meta.bid_to} · 국토부 실거래 ${meta.trade_from} ~ ${meta.trade_to} · 수집 ${meta.collected_at}`;
+const matched = items.filter(i => i.market);
+const deep = matched.filter(i => i.disc_cur >= 0.2);
+const clean = deep.filter(i => i.asset_type === '압류재산' && i.lease && i.lease.ok && !i.lease.count);
+$('#tiles').innerHTML = [
+  ['입찰 예정 공매 아파트', items.length.toLocaleString() + '건', '매각 물건, 앞으로 약 3개월'],
+  ['실거래 시세와 비교 가능', matched.length.toLocaleString() + '건', `동일 면적 ${meta.exact} · 유사 면적 추정 ${meta.approx}`],
+  ['시세보다 20% 이상 낮음', deep.length.toLocaleString() + '건', '현재 회차 최저입찰가 기준'],
+  ['그중 임차인 신고가 없는 압류재산', clean.length.toLocaleString() + '건', '권리분석 부담이 상대적으로 작은 후보'],
+].map(t => `<div class="tile"><div class="label">${t[0]}</div><div class="value">${t[1]}</div><div class="note">${t[2]}</div></div>`).join('');
+
+// ---------- 필터
+const sidos = [...new Set(items.map(i => i.sido))].sort();
+$('#fSido').innerHTML = '<option value="">전국</option>' + sidos.map(s => `<option>${esc(s)}</option>`).join('');
+['#fSido', '#fType', '#fN', '#fPrice', '#fTenant'].forEach(s => $(s).addEventListener('change', () => { state.limit = 60; render(); }));
+
+function filtered() {
+  const sido = $('#fSido').value, type = $('#fType').value, n = +$('#fN').value, price = +$('#fPrice').value, noT = $('#fTenant').checked;
+  return matched.filter(i =>
+    (!sido || i.sido === sido) && (!type || grp(i) === type) && i.n >= n &&
+    (!price || i.cur_price <= price * 1e8) && (!noT || !tenants(i)));
+}
+
+// ---------- 툴팁
+const tip = $('#tip');
+function showTip(html, x, y) {
+  tip.innerHTML = html; tip.style.display = 'block';
+  const r = tip.getBoundingClientRect();
+  tip.style.left = Math.min(x + 14, innerWidth - r.width - 8) + 'px';
+  tip.style.top = Math.max(8, Math.min(y + 14, innerHeight - r.height - 8)) + 'px';
+}
+const hideTip = () => { tip.style.display = 'none'; };
+const tipHtml = i => `<b>${esc(shortName(i))}</b> <span class="t2">${i.area}㎡</span><br>
+  <span class="t2">${esc(i.region)} · ${esc(i.asset_type)}</span><br>
+  최저입찰가 <b>${won(i.cur_price)}</b> · 시세 <b>${won(i.market)}</b> (${i.n}건)<br>
+  시세 대비 <b>${pct(i.disc_cur)}</b>${i.disc_worst != null ? ` · 보증금 전액 인수 시 ${pct(i.disc_worst)}` : ''}<br>
+  <span class="t2">유찰 ${i.fail_count}회${tenants(i) ? ` · 임차인 ${tenants(i)}명` : ''} · 마감 ${esc(i.cur_end)}</span>`;
+
+// ---------- 산점도
+const YMIN = -0.6, YMAX = 1.0;
+function drawScatter(list) {
+  const box = $('#scatter'), W = Math.max(340, box.clientWidth), H = 380, m = { l: 48, r: 18, t: 14, b: 40 };
+  if (!list.length) { box.innerHTML = '<p class="sub">조건에 맞는 물건이 없습니다.</p>'; return; }
+  const xs = list.map(i => Math.log10(i.market));
+  const x0 = Math.min(...xs) - 0.06, x1 = Math.max(...xs) + 0.06;
+  const X = v => m.l + (Math.log10(v) - x0) / (x1 - x0) * (W - m.l - m.r);
+  const Y = d => m.t + (YMAX - Math.max(YMIN, Math.min(YMAX, d))) / (YMAX - YMIN) * (H - m.t - m.b);
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="시세 대비 할인율 산점도. 같은 값은 아래 표에 있습니다.">`;
+  for (let d = -0.6; d <= 1.001; d += 0.2) {
+    const y = Y(d), zero = Math.abs(d) < 1e-9;
+    s += `<line x1="${m.l}" x2="${W - m.r}" y1="${y}" y2="${y}" stroke="var(${zero ? '--axis' : '--grid'})"/>`;
+    s += `<text x="${m.l - 8}" y="${y + 4}" text-anchor="end">${zero ? '시세' : pct(d)}</text>`;
+  }
+  let prev = -99;
+  [0.1, 0.2, 0.3, 0.5, 1, 2, 3, 5, 10, 20, 30, 50, 100].map(v => v * 1e8).filter(v => Math.log10(v) >= x0 && Math.log10(v) <= x1).forEach(v => {
+    const x = X(v);
+    if (x - prev < 44) return;
+    prev = x;
+    s += `<line x1="${x}" x2="${x}" y1="${H - m.b}" y2="${H - m.b + 4}" stroke="var(--axis)"/><text x="${x}" y="${H - m.b + 18}" text-anchor="middle">${won(v)}</text>`;
+  });
+  s += `<text x="${(m.l + W - m.r) / 2}" y="${H - 4}" text-anchor="middle">시세: 최근 실거래 중앙값 (로그 눈금)</text>`;
+  s += `<text x="${W - m.r}" y="${m.t + 12}" text-anchor="end">↑ 시세보다 쌈</text><text x="${W - m.r}" y="${H - m.b - 8}" text-anchor="end">↓ 시세보다 비쌈 (−60% 아래는 맨 아래에 표시)</text>`;
+  list.forEach((i, k) => {
+    const c = color[grp(i)], hollow = tenants(i) > 0, sel = state.sel === i.id;
+    s += `<circle data-k="${k}" cx="${X(i.market).toFixed(1)}" cy="${Y(i.disc_cur).toFixed(1)}" r="${sel ? 7 : 4.5}"
+      fill="${hollow ? 'var(--surface)' : c}" stroke="${hollow ? c : 'var(--surface)'}" stroke-width="2"/>`;
+  });
+  s += '</svg>';
+  box.innerHTML = s;
+  const svg = box.firstChild, pts = list.map(i => [X(i.market), Y(i.disc_cur)]);
+  const nearest = e => {
+    const r = svg.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
+    let best = -1, bd = 24 * 24;
+    pts.forEach((p, k) => { const d = (p[0] - px) ** 2 + (p[1] - py) ** 2; if (d < bd) { bd = d; best = k; } });
+    return best;
+  };
+  svg.addEventListener('mousemove', e => {
+    const k = nearest(e);
+    svg.style.cursor = k >= 0 ? 'pointer' : 'default';
+    k >= 0 ? showTip(tipHtml(list[k]), e.clientX, e.clientY) : hideTip();
+  });
+  svg.addEventListener('mouseleave', hideTip);
+  svg.addEventListener('click', e => { const k = nearest(e); if (k >= 0) select(list[k].id, true); });
+}
+
+// ---------- 상위 15건 막대
+function drawBars(list) {
+  const top = list.filter(i => i.disc_cur > 0).sort((a, b) => b.disc_cur - a.disc_cur).slice(0, 15);
+  const MAX = 130, P = v => Math.min(MAX, v) / MAX * 100;
+  if (!top.length) { $('#bars').innerHTML = '<p class="sub">시세보다 낮은 물건이 없습니다.</p>'; return; }
+  let h = '';
+  top.forEach(i => {
+    const bid = (1 - i.disc_cur) * 100, dep = i.lease && i.lease.deposit_sum ? i.lease.deposit_sum / i.market * 100 : 0;
+    h += `<div class="brow${state.sel === i.id ? ' sel' : ''}" data-id="${i.id}">
+      <div class="nm" title="${esc(local(i))}">${esc(shortName(i))}</div>
+      <div class="track">
+        <div class="seg bid" style="left:0;width:${P(bid)}%"></div>
+        ${dep ? `<div class="seg dep" style="left:calc(${P(bid)}% + 2px);width:calc(${P(bid + dep) - P(bid)}% - 2px)"></div>` : ''}
+        <div class="mark" style="left:${P(100)}%"></div>
+      </div>
+      <div class="val"><b>${pct(i.disc_cur)}</b> · ${won(i.cur_price)} / ${won(i.market)}${tenants(i) && !dep ? ' · 보증금 미공개' : ''}</div>
+    </div>`;
+  });
+  h += `<div class="baxis"><div></div><div class="ticks">${[0, 50, 100].map(v => `<span style="left:${P(v)}%">${v === 100 ? '시세 100' : v}</span>`).join('')}</div><div></div></div>`;
+  $('#bars').innerHTML = h;
+  $('#bars').querySelectorAll('.brow').forEach(r => {
+    const i = top.find(t => t.id === r.dataset.id);
+    r.addEventListener('mousemove', e => showTip(tipHtml(i), e.clientX, e.clientY));
+    r.addEventListener('mouseleave', hideTip);
+    r.addEventListener('click', () => select(i.id, true));
+  });
+}
+
+// ---------- 표
+const cols = [
+  ['name', '물건', ''], ['asset_type', '재산유형', ''], ['area', '전용㎡', 'num'], ['cur_price', '최저입찰가', 'num'],
+  ['market', '시세 (거래수)', 'num'], ['disc_cur', '시세 대비', 'num'], ['disc_worst', '보증금 인수 시', 'num'],
+  ['fail_count', '유찰', 'num'], ['cur_end', '입찰 마감', ''], ['flags', '주의', ''],
+];
+$('#thead').innerHTML = cols.map(c => `<th class="${c[2]}" data-k="${c[0]}">${c[1]}<span></span></th>`).join('');
+$('#thead').querySelectorAll('th').forEach(th => th.addEventListener('click', () => {
+  const k = th.dataset.k;
+  if (k === 'flags') return;
+  state.dir = state.sort === k ? -state.dir : (['name', 'asset_type', 'cur_end', 'cur_price'].includes(k) ? 1 : -1);
+  state.sort = k; render();
+}));
+function sortList(list) {
+  const k = state.sort, d = state.dir;
+  return [...list].sort((a, b) => {
+    const va = a[k], vb = b[k];
+    if (va == null && vb == null) return 0;
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    return (typeof va === 'string' ? va.localeCompare(vb, 'ko') : va - vb) * d;
+  });
+}
+function detailHtml(i) {
+  const tr = (i.trades || []).slice(0, 10).map(t => `<li>${t.date} · ${won(t.price)} · ${t.area}㎡ · ${esc(t.floor)}층</li>`).join('');
+  const rd = i.rounds.map(r => `<li>${esc(r.end)} 마감 · 최저 ${won(r.price)}</li>`).join('');
+  const ls = i.lease && i.lease.ok
+    ? (i.lease.count ? '<ul>' + i.lease.tenants.map(t => `<li>${esc(t.kind)} · 보증금 ${t.deposit ? won(t.deposit) : '미공개'}${t.movein && t.movein !== '-' ? ' · 전입 ' + esc(t.movein) : ''}</li>`).join('') + '</ul>' : '신고된 임차인 없음 (감정평가서·배분요구서 기준)')
+    : '이 재산유형은 임대차 정보를 제공하지 않습니다. 공고문을 확인하세요.';
+  return `<div class="cols">
+    <div><h3>물건</h3>${esc(local(i))}<br><span class="small">${esc(i.seller)} · 감정가 ${i.appraisal ? won(i.appraisal) : '미공개'} · ${i.built ? esc(i.built) + '년 준공' : ''}</span><br>
+      <a href="${esc(i.url)}" target="_blank" rel="noopener">온비드에서 열기</a></div>
+    <div><h3>시세 근거</h3>${esc(i.market_basis)}<br><span class="small">범위 ${won(i.lo)} ~ ${won(i.hi)}</span><ul>${tr}</ul></div>
+    <div><h3>입찰 일정</h3><ul>${rd}</ul></div>
+    <div><h3>임대차</h3>${ls}</div>
+  </div>`;
+}
+function drawTable(list) {
+  $('#thead').querySelectorAll('th').forEach(th => { th.lastChild.textContent = th.dataset.k === state.sort ? (state.dir > 0 ? ' ▲' : ' ▼') : ''; });
+  const rows = sortList(list), show = rows.slice(0, state.limit);
+  $('#tbody').innerHTML = show.map(i => `
+    <tr class="row${state.sel === i.id ? ' sel' : ''}" data-id="${i.id}">
+      <td><b>${esc(shortName(i))}</b><br><span class="small">${esc(i.region)}</span></td>
+      <td>${esc(i.asset_type)}</td>
+      <td class="num">${i.area}</td>
+      <td class="num">${won(i.cur_price)}</td>
+      <td class="num">${won(i.market)} <span class="small">(${i.n}${i.match === 'approx' ? ', 추정' : ''})</span></td>
+      <td class="num ${i.disc_cur > 0 ? 'pos' : ''}">${pct(i.disc_cur)}</td>
+      <td class="num">${i.disc_worst != null ? pct(i.disc_worst) : tenants(i) ? '<span class="small">보증금 미공개</span>' : '<span class="small">–</span>'}</td>
+      <td class="num">${i.fail_count}</td>
+      <td>${esc(i.cur_end.slice(5))}</td>
+      <td>${i.flags.map(f => `<span class="chip">${esc(f)}</span>`).join('')}</td>
+    </tr>${state.sel === i.id ? `<tr class="detail"><td colspan="${cols.length}">${detailHtml(i)}</td></tr>` : ''}`).join('');
+  $('#tbody').querySelectorAll('tr.row').forEach(r => r.addEventListener('click', () => select(r.dataset.id, false)));
+  const more = $('#more');
+  more.hidden = rows.length <= state.limit;
+  more.textContent = `나머지 ${rows.length - state.limit}건 더 보기`;
+  more.onclick = () => { state.limit = rows.length; render(); };
+}
+
+function select(id, scroll) {
+  state.sel = state.sel === id && !scroll ? null : id;
+  if (scroll) state.limit = 1e9;
+  render();
+  if (scroll) { const r = document.querySelector(`tr.row[data-id="${id}"]`); if (r) r.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+}
+function render() {
+  const list = filtered();
+  $('#count').textContent = `조건에 맞는 물건 ${list.length}건 / 시세 비교 가능 ${matched.length}건`;
+  drawScatter(list); drawBars(list); drawTable(list);
+}
+let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => drawScatter(filtered()), 120); });
+render();
+</script>
+</body>
+</html>

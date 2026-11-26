@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+# 다시 받을 수 있는 수집 캐시 (용량이 크다)
+data/molit/
+data/onbid_raw.json
+# 인증 정보는 저장소에 넣지 않는다
+*token*
+.env
