@@ -1,7 +1,7 @@
 name: Refresh data
 
 # 온비드 공매 회차·임대차 정보를 새로 수집해 data/와 report.html을 커밋한다.
-# 매주 월요일 04:00(한국 시간)에 자동 실행되고, Actions 탭에서 수동으로도 실행할 수 있다. LLM API나 별도 키는 쓰지 않는다.
+# 매일 04:00(한국 시간)에 자동 실행되고, Actions 탭에서 수동으로도 실행할 수 있다. LLM API나 별도 키는 쓰지 않는다.
 #
 # 시세 비교에는 Update trades 워크플로가 받아 둔 실거래 스냅샷(data/trades/)을 쓴다(이 워크플로는 국토부에 접속하지 않는다).
 # GitHub 러너는 해외 IP라 온비드 접속이 러너에 따라 안 될 때가 있다. 그러면 새 러너에서 다시 시도한다(최대 3번).
@@ -9,7 +9,7 @@ name: Refresh data
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 19 * * 0'   # 매주 월요일 04:00 (한국 시간, UTC 기준 일요일)
+    - cron: '0 19 * * *'   # 매일 04:00 (한국 시간)
 
 permissions:
   contents: write

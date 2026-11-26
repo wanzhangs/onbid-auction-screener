@@ -1,6 +1,6 @@
 """온비드 공매 아파트 × 국토부 실거래가 매칭.
 
-실행:  python update_trades.py   (국토부 실거래 스냅샷 갱신, 7일 지난 시도만 다시 받는다)
+실행:  python update_trades.py   (국토부 실거래 스냅샷 갱신, 오늘 받지 않은 시도만 다시 받는다)
        python collect.py
 출력:  data/onbid_raw.json      온비드 입찰 회차 원본
        data/results.json        물건별 매칭 결과 (report.html이 읽는 데이터)
