@@ -1,12 +1,12 @@
 name: Refresh data
 
 # 온비드 공매 회차·국토부 실거래가·임대차 정보를 새로 수집해 data/와 report.html을 커밋한다.
-# 기본은 수동 실행이다. 정기 실행을 원하면 아래 schedule 주석을 풀면 된다.
+# 매주 월요일 04:00(한국 시간)에 자동 실행되고, Actions 탭에서 수동으로도 실행할 수 있다. LLM API나 별도 키는 쓰지 않는다.
 # 주의: GitHub 러너(해외 IP)에서 온비드·국토부 사이트가 응답하지 않을 수 있다. 그 경우 PC에서 실행해 푸시한다.
 on:
   workflow_dispatch:
-  # schedule:
-  #   - cron: '0 18 * * 0'   # 매주 월요일 03:00 (한국 시간)
+  schedule:
+    - cron: '0 19 * * 0'   # 매주 월요일 04:00 (한국 시간, UTC 기준 일요일)
 
 permissions:
   contents: write
