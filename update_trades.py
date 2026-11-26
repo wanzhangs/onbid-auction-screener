@@ -178,13 +178,13 @@ def main():
     done, fails = 0, 0
     for name in stale:
         raw = None
-        for attempt in range(2):
+        for attempt in range(3):                      # 러너에서는 두 번째 요청부터 연결이 끊기는 일이 잦다
             try:
                 raw = download(op, name, codes[name])
                 break
             except NET_ERRORS as e:
                 print(f"  {name}: 실패 ({e})", flush=True)
-                time.sleep(6)
+                time.sleep(10 + 15 * attempt)
                 try:
                     op, codes = session()             # 끊긴 뒤에는 세션을 새로 연다
                 except NET_ERRORS:
