@@ -67,7 +67,14 @@ def post(op, url, params, timeout=180):
 # ---------------------------------------------------------------- 온비드
 def fetch_onbid():
     op = opener(ONBID_PAGE)
-    op.open(ONBID_PAGE, timeout=60).read()
+    for attempt in range(3):               # 잠깐의 끊김에 대비해 첫 접속만 다시 시도한다
+        try:
+            op.open(ONBID_PAGE, timeout=30).read()
+            break
+        except (urllib.error.URLError, TimeoutError, ConnectionError):
+            if attempt == 2:
+                raise
+            time.sleep(10)
     rows, page = [], 1
     while True:
         d = json.loads(post(op, ONBID_LIST, {
@@ -440,4 +447,9 @@ def main():
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
-    main()
+    try:
+        main()
+    except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+        # 종료 코드 75: 대상 사이트에 접속하지 못함(코드 오류가 아님). GitHub Actions가 다른 러너에서 다시 시도한다.
+        print(f"수집 대상 사이트에 접속하지 못했습니다: {e}", flush=True)
+        sys.exit(75)

@@ -1,0 +1,73 @@
+name: Refresh once
+
+# Refresh data가 호출하는 1회 시도. 새 러너(새 IP)에서 수집을 시도하고, 성공하면 data/와 report.html을 커밋한다.
+# 수집 대상 사이트에 접속하지 못하면(collect.py 종료 코드 75) 실패로 처리하지 않고 ok=false만 돌려준다.
+on:
+  workflow_call:
+    outputs:
+      ok:
+        description: 수집·커밋까지 끝났으면 true
+        value: ${{ jobs.run.outputs.ok }}
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      ok: ${{ steps.done.outputs.ok }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 수집·매칭
+        id: collect
+        run: |
+          set +e
+          python collect.py
+          code=$?
+          set -e
+          if [ "$code" -eq 75 ]; then
+            echo "::warning::이 러너에서는 수집 대상 사이트에 접속하지 못했습니다."
+            echo "reached=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$code" -ne 0 ]; then exit "$code"; fi
+          echo "reached=true" >> "$GITHUB_OUTPUT"
+      - name: 수집 결과 검사
+        if: steps.collect.outputs.reached == 'true'
+        run: |
+          python - <<'EOF'
+          import json
+          d = json.load(open("data/results.json", encoding="utf-8"))
+          m = sum(1 for i in d["items"] if i.get("market"))
+          print(f"공매 물건 {len(d['items'])}건 · 시세 비교 {m}건 · 실거래 스냅샷 {d['meta'].get('trade_snapshot')}")
+          assert len(d["items"]) >= 30 and m >= 10, "수집량이 비정상적으로 적어 커밋하지 않습니다"
+          EOF
+      - name: 리포트 생성
+        if: steps.collect.outputs.reached == 'true'
+        run: python build_report.py
+      - name: 커밋
+        if: steps.collect.outputs.reached == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/results.json data/results.csv report.html
+          if git diff --cached --quiet; then echo "변경 없음"; else git commit -m "데이터 갱신 $(date -u +%Y-%m-%d)" && git push; fi
+      - name: 완료 표시
+        id: done
+        if: steps.collect.outputs.reached == 'true'
+        run: echo "ok=true" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        if: steps.collect.outputs.reached == 'true'
+        with:
+          name: report-${{ github.run_id }}-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: |
+            report.html
+            data/results.csv
+          overwrite: true
