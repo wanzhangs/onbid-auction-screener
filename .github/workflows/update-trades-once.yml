@@ -7,7 +7,7 @@ on:
     inputs:
       max_age:
         type: string
-        default: '28'
+        default: '7'
       limit:
         type: string
         default: '99'
@@ -39,7 +39,7 @@ jobs:
           LIMIT: ${{ inputs.limit }}
         run: |
           set +e
-          python update_trades.py --max-age "$MAX_AGE" --limit "$LIMIT" --fail-after 45
+          python update_trades.py --max-age "$MAX_AGE" --limit "$LIMIT" --fail-after 21
           code=$?
           set -e
           if [ "$code" -eq 75 ]; then

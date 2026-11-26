@@ -1,18 +1,18 @@
 name: Update trades
 
 # 국토부 실거래가(아파트 매매) 스냅샷을 data/trades/에 받아 둔다. Refresh data는 이 폴더를 읽어 시세를 비교한다.
-# 매일 02:30(한국 시간)에 실행되지만, 모든 시도의 스냅샷이 28일 이내면 접속하지 않고 바로 끝난다.
+# 매일 02:30(한국 시간)에 실행되지만, 모든 시도의 스냅샷이 7일 이내면 접속하지 않고 바로 끝난다.
 #
 # 국토부 사이트는 해외 IP(GitHub 러너)에서 접속이 됐다 안 됐다 한다. 그래서
 # - 받을 수 있는 시도만 받아 커밋하고, 남은 시도는 다음 실행이 이어서 받는다.
 # - 한 번도 접속하지 못하면 새 러너에서 다시 시도한다(최대 3번).
-# - 가장 오래된 스냅샷이 45일을 넘도록 못 받으면 그때 실패로 표시한다.
+# - 가장 오래된 스냅샷이 21일을 넘도록 못 받으면 그때 실패로 표시한다.
 on:
   workflow_dispatch:
     inputs:
       max_age:
         description: '며칠 지난 시도를 다시 받을지 (0이면 전부)'
-        default: '28'
+        default: '7'
       limit:
         description: '이번 실행에서 받을 시도 수'
         default: '99'
@@ -30,21 +30,21 @@ jobs:
   try1:
     uses: ./.github/workflows/update-trades-once.yml
     with:
-      max_age: ${{ inputs.max_age || '28' }}
+      max_age: ${{ inputs.max_age || '7' }}
       limit: ${{ inputs.limit || '99' }}
   try2:
     needs: try1
     if: ${{ !cancelled() && needs.try1.outputs.ok != 'true' }}
     uses: ./.github/workflows/update-trades-once.yml
     with:
-      max_age: ${{ inputs.max_age || '28' }}
+      max_age: ${{ inputs.max_age || '7' }}
       limit: ${{ inputs.limit || '99' }}
   try3:
     needs: [try1, try2]
     if: ${{ !cancelled() && needs.try1.outputs.ok != 'true' && needs.try2.outputs.ok != 'true' }}
     uses: ./.github/workflows/update-trades-once.yml
     with:
-      max_age: ${{ inputs.max_age || '28' }}
+      max_age: ${{ inputs.max_age || '7' }}
       limit: ${{ inputs.limit || '99' }}
   result:
     needs: [try1, try2, try3]

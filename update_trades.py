@@ -1,10 +1,10 @@
 """국토부 실거래가(아파트 매매, 최근 1년)를 시도별 스냅샷으로 받아 둔다.
 
 실행:
-    python update_trades.py                 저장한 지 MAX_AGE일(기본 28일)이 지난 시도만 다시 받는다
+    python update_trades.py                 저장한 지 MAX_AGE일(기본 7일)이 지난 시도만 다시 받는다
     python update_trades.py --max-age 0     전부 다시 받는다
     python update_trades.py --limit 3       이번 실행에서 최대 3개 시도만 받는다
-    python update_trades.py --fail-after 45 아무것도 못 받았고 가장 오래된 스냅샷이 45일을 넘으면 오류(1)로 끝낸다
+    python update_trades.py --fail-after 21 아무것도 못 받았고 가장 오래된 스냅샷이 21일을 넘으면 오류(1)로 끝낸다
 
 출력:
     data/trades/<시도>.csv.gz   매칭에 쓰는 실거래 (계약 해제 건 제외)
@@ -40,7 +40,7 @@ PAGE = MOLIT + "/pt/xls/xls.do?mobileAt="
 TODAY = dt.date.today()
 TRADE_FROM = TODAY - dt.timedelta(days=364)     # 시도 단위 다운로드는 최대 1년
 TRADE_TO = TODAY
-MAX_AGE = 28
+MAX_AGE = 7
 COLS = ["sgg", "bunji", "date", "price_man", "area", "floor", "complex", "built", "deal"]
 NET_ERRORS = (urllib.error.URLError, TimeoutError, ConnectionError, http.client.HTTPException)
 
