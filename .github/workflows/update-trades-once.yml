@@ -1,0 +1,68 @@
+name: Update trades once
+
+# Update trades가 호출하는 1회 시도. 새 러너(새 IP)에서 국토부 실거래가를 받아 data/trades/에 커밋한다.
+# 국토부에 접속하지 못하면(update_trades.py 종료 코드 75) 실패로 처리하지 않고 ok=false만 돌려준다.
+on:
+  workflow_call:
+    inputs:
+      max_age:
+        type: string
+        default: '28'
+      limit:
+        type: string
+        default: '99'
+    outputs:
+      ok:
+        description: 받을 것이 없었거나 하나 이상 받아 커밋했으면 true
+        value: ${{ jobs.run.outputs.ok }}
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      ok: ${{ steps.done.outputs.ok }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 실거래 스냅샷 갱신
+        id: fetch
+        env:
+          MAX_AGE: ${{ inputs.max_age }}
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          set +e
+          python update_trades.py --max-age "$MAX_AGE" --limit "$LIMIT" --fail-after 45
+          code=$?
+          set -e
+          if [ "$code" -eq 75 ]; then
+            echo "::warning::이 러너에서는 국토부 사이트에 접속하지 못했습니다."
+            echo "reached=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$code" -ne 0 ]; then exit "$code"; fi
+          echo "reached=true" >> "$GITHUB_OUTPUT"
+      - name: 커밋
+        if: steps.fetch.outputs.reached == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/trades
+          if git diff --cached --quiet; then
+            echo "변경 없음"
+          else
+            git commit -m "실거래 스냅샷 갱신 $(date -u +%Y-%m-%d)"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
+      - name: 완료 표시
+        id: done
+        if: steps.fetch.outputs.reached == 'true'
+        run: echo "ok=true" >> "$GITHUB_OUTPUT"

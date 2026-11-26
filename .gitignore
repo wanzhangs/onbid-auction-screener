@@ -6,3 +6,4 @@ data/onbid_raw.json
 # 인증 정보는 저장소에 넣지 않는다
 *token*
 .env
+_site/

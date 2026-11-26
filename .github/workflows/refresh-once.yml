@@ -46,7 +46,7 @@ jobs:
           import json
           d = json.load(open("data/results.json", encoding="utf-8"))
           m = sum(1 for i in d["items"] if i.get("market"))
-          print(f"공매 물건 {len(d['items'])}건 · 시세 비교 {m}건 · 실거래 스냅샷 {d['meta'].get('trade_snapshot')}")
+          print(f"공매 물건 {len(d['items'])}건 · 시세 비교 {m}건 · 실거래 저장일 {d['meta'].get('trade_saved')}")
           assert len(d["items"]) >= 30 and m >= 10, "수집량이 비정상적으로 적어 커밋하지 않습니다"
           EOF
       - name: 리포트 생성

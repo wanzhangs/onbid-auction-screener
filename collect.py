@@ -1,17 +1,17 @@
-"""온비드 공매 아파트 × 국토부 실거래가 수집·매칭.
+"""온비드 공매 아파트 × 국토부 실거래가 매칭.
 
-실행:  python collect.py
+실행:  python update_trades.py   (국토부 실거래 스냅샷 갱신, 한 달에 한 번이면 충분)
+       python collect.py
 출력:  data/onbid_raw.json      온비드 입찰 회차 원본
-       data/molit/<시도>.csv    국토부 실거래가 공개시스템 CSV (시도별 최근 1년)
        data/results.json        물건별 매칭 결과 (report.html이 읽는 데이터)
        data/results.csv         같은 내용의 표
 
-API 키·로그인 없이 두 사이트의 공개 조회 기능만 사용한다.
-국토부 CSV는 일일 다운로드 100회 제한이 있어 받은 파일은 재사용한다.
+API 키·로그인 없이 온비드의 공개 조회 기능만 사용한다.
+실거래가는 update_trades.py가 받아 둔 data/trades/ 스냅샷을 읽는다(이 스크립트는 국토부에 접속하지 않는다).
+종료 코드 75: 온비드에 접속하지 못함(GitHub Actions가 다른 러너에서 다시 시도한다).
 """
 import csv
 import datetime as dt
-import gzip
 import http.cookiejar
 import io
 import json
@@ -24,19 +24,16 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from update_trades import load_snapshots, norm_bunji
+
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
-MOLIT_DIR = DATA / "molit"
-SNAP = DATA / "trades.csv.gz"            # 실거래 스냅샷: 국토부에 접속할 수 없는 환경(GitHub 러너)에서 대신 쓴다
-SNAP_META = DATA / "trades_meta.json"
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/130.0 Safari/537.36")
 
 TODAY = dt.date.today()
 BID_FROM = TODAY
 BID_TO = TODAY + dt.timedelta(days=95)          # 앞으로 약 3개월 내 입찰 회차
-TRADE_FROM = TODAY - dt.timedelta(days=364)     # 실거래 비교 구간: 최근 1년
-TRADE_TO = TODAY
 APT_CTGR_ID = "10201"                           # 온비드 용도 분류: 주거용건물 > 아파트
 
 ONBID = "https://www.onbid.co.kr"
@@ -44,7 +41,6 @@ ONBID_PAGE = ONBID + "/op/cltrpbancinf/cltr/cltrcdtnsrch/CltrCdtnSrchController/
 ONBID_LIST = ONBID + "/op/cltrpbancinf/cltr/cltrcdtnsrch/CltrCdtnSrchController/srchCltrCdtn.do"
 ONBID_DTL = ONBID + "/op/cltrpbancinf/cltrdtl/CltrDtlController/mvmnCltrDtl.do"
 ONBID_LEASE = ONBID + "/op/cltrpbancinf/cltrdtl/CltrDtlController/inqLeasInfClg.do"
-MOLIT = "https://rt.molit.go.kr"
 
 
 def opener(referer):
@@ -152,112 +148,7 @@ def group_items(rows):
     return items
 
 
-# ---------------------------------------------------------------- 국토부 실거래가
-def fetch_molit(sido_names):
-    MOLIT_DIR.mkdir(parents=True, exist_ok=True)
-    page = MOLIT + "/pt/xls/xls.do?mobileAt="
-    op = opener(page)
-    op.open(page, timeout=25).read()
-    codes = {s["ctprvnNm"]: s["signguCode"]
-             for s in json.loads(post(op, MOLIT + "/data/sido.do", {}).decode("utf-8"))}
-    out = {}
-    for name in sorted(sido_names or codes):       # 시도를 지정하지 않으면 전국
-        code = codes.get(name)
-        if not code:
-            print(f"  [건너뜀] 국토부 시도 목록에 없는 이름: {name}")
-            continue
-        f = MOLIT_DIR / f"{name}_{TRADE_FROM:%Y%m%d}_{TRADE_TO:%Y%m%d}.csv"
-        if not f.exists():
-            raw = post(op, MOLIT + "/pt/xls/ptXlsCSVDown.do", {
-                "srhThingNo": "A", "srhDelngSecd": "1", "srhAddrGbn": "1", "srhLfstsSecd": "1",
-                "sidoNm": name, "sggNm": "전체", "emdNm": "전체", "loadNm": "전체",
-                "areaNm": "전체", "hsmpNm": "전체", "mobileAt": "",
-                "srhFromDt": TRADE_FROM.isoformat(), "srhToDt": TRADE_TO.isoformat(),
-                "srhNewRonSecd": "", "srhSidoCd": code, "srhSggCd": "", "srhEmdCd": "",
-                "srhRoadNm": "", "srhLoadCd": "", "srhHsmpCd": "", "srhArea": "",
-                "srhFromAmount": "", "srhToAmount": "", "srhLrArea": "",
-            })
-            if b'"NO"' not in raw[:4000]:
-                # 일부 시도만 빠진 채 매칭하면 결과가 조용히 줄어든다: 실패로 처리해 스냅샷으로 넘어가게 한다
-                raise ConnectionError(f"국토부 {name}: CSV가 아닌 응답 ({len(raw)}바이트)")
-            f.write_bytes(raw)
-            print(f"  국토부 {name}: {len(raw) / 1e6:.1f}MB 저장")
-            time.sleep(2.0)
-        else:
-            print(f"  국토부 {name}: 기존 파일 사용")
-        out[name] = f
-    return out
-
-
-def save_snapshot(idx):
-    """매칭에 쓰는 실거래를 압축 CSV 한 파일로 저장한다(저장소에 올려 GitHub 러너가 쓴다)."""
-    n = 0
-    with gzip.open(SNAP, "wt", encoding="utf-8", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["sgg", "bunji", "date", "price_man", "area", "floor", "complex", "built", "deal"])
-        for sgg in sorted(idx):
-            for bj in sorted(idx[sgg]):
-                for t in idx[sgg][bj]:
-                    w.writerow([sgg, bj, t["date"], t["price"] // 10000, t["area"], t["floor"],
-                                t["complex"], t["built"], t["deal"]])
-                    n += 1
-    meta = {"saved_at": TODAY.isoformat(), "trade_from": TRADE_FROM.isoformat(),
-            "trade_to": TRADE_TO.isoformat(), "rows": n}
-    SNAP_META.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
-    print(f"  실거래 스냅샷 저장: {n:,}건 ({SNAP.stat().st_size / 1e6:.1f}MB)")
-
-
-def load_snapshot():
-    if not SNAP.exists() or not SNAP_META.exists():
-        return None
-    idx = {}
-    with gzip.open(SNAP, "rt", encoding="utf-8", newline="") as f:
-        for r in csv.DictReader(f):
-            idx.setdefault(r["sgg"], {}).setdefault(r["bunji"], []).append({
-                "date": r["date"], "price": int(r["price_man"]) * 10000, "area": float(r["area"]),
-                "floor": r["floor"], "complex": r["complex"], "built": r["built"], "deal": r["deal"]})
-    return idx, json.loads(SNAP_META.read_text(encoding="utf-8"))
-
-
-def norm_bunji(s):
-    m = re.match(r"\s*(산)?\s*(\d+)(?:-(\d+))?", s or "")
-    if not m:
-        return None
-    main, sub = int(m.group(2)), int(m.group(3) or 0)
-    return ("산" if m.group(1) else "") + (f"{main}-{sub}" if sub else f"{main}")
-
-
-def load_trades(files):
-    """{시군구 문자열: {번지: [거래...]}}"""
-    idx = {}
-    n = 0
-    for f in files.values():
-        text = f.read_bytes().decode("cp949", errors="replace")
-        start = text.find('"NO"')
-        for row in csv.DictReader(io.StringIO(text[start:])):
-            if (row.get("해제사유발생일") or "-").strip() not in ("-", ""):
-                continue                                  # 계약 해제 건 제외
-            try:
-                price = int(row["거래금액(만원)"].replace(",", "")) * 10000
-                area = float(row["전용면적(㎡)"])
-                ym, day = row["계약년월"], int(row["계약일"])
-                date = f"{ym[:4]}-{ym[4:6]}-{day:02d}"
-            except Exception:
-                continue
-            bj = norm_bunji(row.get("번지"))
-            if not bj:
-                continue
-            floor = row.get("층") or ""
-            idx.setdefault(row["시군구"].strip(), {}).setdefault(bj, []).append({
-                "date": date, "price": price, "area": area, "floor": floor,
-                "complex": row.get("단지명") or "", "built": row.get("건축년도") or "",
-                "deal": row.get("거래유형") or "",
-            })
-            n += 1
-    print(f"  실거래 {n:,}건 적재 (계약 해제 건 제외)")
-    return idx
-
-
+# ---------------------------------------------------------------- 매칭
 def norm_name(item):
     """'(16) 경기 군포시 당동 885 …' 같은 표기를 '경기도 군포시 당동 885 …'로 맞춘다."""
     name = re.sub(r"^\(\d+\)\s*", "", item["name"]).strip()
@@ -382,18 +273,12 @@ def main():
     items = [i for i in group_items(rows) if i["dispose"] in ("매각", "")]
     print(f"  회차 {len(rows)}건 → 매각 물건 {len(items)}건")
 
-    print("2) 국토부 실거래가 CSV 수집")
-    snap = None
-    try:
-        idx = load_trades(fetch_molit(None))
-        save_snapshot(idx)
-    except (urllib.error.URLError, TimeoutError, OSError) as e:
-        got = load_snapshot()
-        if got is None:
-            raise
-        idx, snap = got
-        print(f"  국토부 사이트에 접속하지 못했습니다({e}).")
-        print(f"  저장된 실거래 스냅샷을 씁니다: {snap['saved_at']} 저장, {snap['rows']:,}건")
+    print("2) 실거래 스냅샷 읽기 (data/trades)")
+    idx, tmeta, n = load_snapshots()
+    if not n:
+        sys.exit("실거래 스냅샷이 없습니다. 먼저 python update_trades.py 를 실행하세요.")
+    saved = sorted(m["saved_at"] for m in tmeta.values())
+    print(f"  {len(tmeta)}개 시도 · {n:,}건 · 저장일 {saved[0]} ~ {saved[-1]}")
 
     print("3) 매칭")
     for it in items:
@@ -421,9 +306,9 @@ def main():
     meta = {
         "collected_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "bid_from": BID_FROM.isoformat(), "bid_to": BID_TO.isoformat(),
-        "trade_from": snap["trade_from"] if snap else TRADE_FROM.isoformat(),
-        "trade_to": snap["trade_to"] if snap else TRADE_TO.isoformat(),
-        "trade_snapshot": snap["saved_at"] if snap else None,   # 값이 있으면 저장된 스냅샷으로 매칭한 것
+        "trade_from": min(m["trade_from"] for m in tmeta.values()),
+        "trade_to": max(m["trade_to"] for m in tmeta.values()),
+        "trade_saved": saved[0] if saved[0] == saved[-1] else f"{saved[0]} ~ {saved[-1]}",   # 시도별 스냅샷 저장일
         "rounds": len(rows), "items": len(items), **cnt,
     }
     (DATA / "results.json").write_text(

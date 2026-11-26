@@ -171,7 +171,7 @@ const state = { sort: 'disc_cur', dir: -1, sel: null, limit: 60 };
 
 // ---------- 머리글·타일
 $('#subtitle').textContent =
-  `온비드 입찰기간 ${meta.bid_from} ~ ${meta.bid_to} · 국토부 실거래 ${meta.trade_from} ~ ${meta.trade_to}${meta.trade_snapshot ? ` (${meta.trade_snapshot} 저장분)` : ''} · 수집 ${meta.collected_at}`;
+  `온비드 입찰기간 ${meta.bid_from} ~ ${meta.bid_to} · 국토부 실거래 ${meta.trade_from} ~ ${meta.trade_to}${meta.trade_saved ? ` (${meta.trade_saved} 저장분)` : ''} · 수집 ${meta.collected_at}`;
 const matched = items.filter(i => i.market);
 const deep = matched.filter(i => i.disc_cur >= 0.2);
 const clean = deep.filter(i => i.asset_type === '압류재산' && i.lease && i.lease.ok && !i.lease.count);

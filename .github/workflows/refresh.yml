@@ -3,10 +3,9 @@ name: Refresh data
 # 온비드 공매 회차·임대차 정보를 새로 수집해 data/와 report.html을 커밋한다.
 # 매주 월요일 04:00(한국 시간)에 자동 실행되고, Actions 탭에서 수동으로도 실행할 수 있다. LLM API나 별도 키는 쓰지 않는다.
 #
-# GitHub 러너는 해외 IP라 온비드·국토부 사이트 접속이 러너에 따라 되기도 하고 안 되기도 한다.
-# - 온비드에 접속하지 못하면 새 러너에서 다시 시도한다(최대 3번). 3번 모두 안 되면 실패로 끝나고 기존 리포트는 그대로 남는다.
-# - 국토부에 접속하지 못하면 저장소의 실거래 스냅샷(data/trades.csv.gz)으로 시세를 비교한다.
-#   스냅샷은 PC에서 collect.py를 실행해 푸시하면 갱신된다.
+# 시세 비교에는 Update trades 워크플로가 받아 둔 실거래 스냅샷(data/trades/)을 쓴다(이 워크플로는 국토부에 접속하지 않는다).
+# GitHub 러너는 해외 IP라 온비드 접속이 러너에 따라 안 될 때가 있다. 그러면 새 러너에서 다시 시도한다(최대 3번).
+# 3번 모두 안 되면 실패로 끝나고 기존 리포트는 그대로 남는다. 끝나면 Build and publish report가 Pages에 배포한다.
 on:
   workflow_dispatch:
   schedule:
@@ -16,7 +15,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: refresh
+  group: repo-write
   cancel-in-progress: false
 
 jobs:
