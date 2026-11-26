@@ -18,4 +18,4 @@ API 키와 로그인은 쓰지 않습니다. 국토부 CSV는 하루 100회 다�
 
 ## GitHub Actions
 - **Build report** (`.github/workflows/build.yml`): main에 푸시하면 문법 검사 후 `report.html`을 다시 만들고 `data/results.csv`와 함께 아티팩트로 올립니다.
-- **Refresh data** (`.github/workflows/refresh.yml`): Actions 탭에서 수동으로 실행하면 데이터를 새로 수집해 커밋합니다. 매주 월요일 04:00(한국 시간)에 자동으로도 실행됩니다. GitHub 러너는 해외 IP라 온비드·국토부 사이트가 응답하지 않을 수 있고, 그 경우 PC에서 실행해 푸시합니다.
+- **Refresh data** (`.github/workflows/refresh.yml`): Actions 탭에서 수동으로 실행하면 데이터를 새로 수집해 커밋합니다. 매주 월요일 04:00(한국 시간)에 자동으로도 실행됩니다. 국토부 실거래가 사이트는 해외 IP(GitHub 러너)에서 접속되지 않아, 러너는 온비드 공매 목록과 임대차 정보만 새로 받고 시세 비교에는 저장소의 실거래 스냅샷(`data/trades.csv.gz`)을 씁니다. 스냅샷은 PC에서 `python collect.py`를 실행해 푸시하면 갱신됩니다(한 달에 한 번 정도 권장).

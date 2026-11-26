@@ -11,6 +11,7 @@ API 키·로그인 없이 두 사이트의 공개 조회 기능만 사용한다.
 """
 import csv
 import datetime as dt
+import gzip
 import http.cookiejar
 import io
 import json
@@ -18,6 +19,7 @@ import re
 import statistics
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -25,6 +27,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
 MOLIT_DIR = DATA / "molit"
+SNAP = DATA / "trades.csv.gz"            # 실거래 스냅샷: 국토부에 접속할 수 없는 환경(GitHub 러너)에서 대신 쓴다
+SNAP_META = DATA / "trades_meta.json"
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/130.0 Safari/537.36")
 
@@ -146,11 +150,11 @@ def fetch_molit(sido_names):
     MOLIT_DIR.mkdir(parents=True, exist_ok=True)
     page = MOLIT + "/pt/xls/xls.do?mobileAt="
     op = opener(page)
-    op.open(page, timeout=60).read()
+    op.open(page, timeout=25).read()
     codes = {s["ctprvnNm"]: s["signguCode"]
              for s in json.loads(post(op, MOLIT + "/data/sido.do", {}).decode("utf-8"))}
     out = {}
-    for name in sorted(sido_names):
+    for name in sorted(sido_names or codes):       # 시도를 지정하지 않으면 전국
         code = codes.get(name)
         if not code:
             print(f"  [건너뜀] 국토부 시도 목록에 없는 이름: {name}")
@@ -176,6 +180,36 @@ def fetch_molit(sido_names):
             print(f"  국토부 {name}: 기존 파일 사용")
         out[name] = f
     return out
+
+
+def save_snapshot(idx):
+    """매칭에 쓰는 실거래를 압축 CSV 한 파일로 저장한다(저장소에 올려 GitHub 러너가 쓴다)."""
+    n = 0
+    with gzip.open(SNAP, "wt", encoding="utf-8", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["sgg", "bunji", "date", "price_man", "area", "floor", "complex", "built", "deal"])
+        for sgg in sorted(idx):
+            for bj in sorted(idx[sgg]):
+                for t in idx[sgg][bj]:
+                    w.writerow([sgg, bj, t["date"], t["price"] // 10000, t["area"], t["floor"],
+                                t["complex"], t["built"], t["deal"]])
+                    n += 1
+    meta = {"saved_at": TODAY.isoformat(), "trade_from": TRADE_FROM.isoformat(),
+            "trade_to": TRADE_TO.isoformat(), "rows": n}
+    SNAP_META.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+    print(f"  실거래 스냅샷 저장: {n:,}건 ({SNAP.stat().st_size / 1e6:.1f}MB)")
+
+
+def load_snapshot():
+    if not SNAP.exists() or not SNAP_META.exists():
+        return None
+    idx = {}
+    with gzip.open(SNAP, "rt", encoding="utf-8", newline="") as f:
+        for r in csv.DictReader(f):
+            idx.setdefault(r["sgg"], {}).setdefault(r["bunji"], []).append({
+                "date": r["date"], "price": int(r["price_man"]) * 10000, "area": float(r["area"]),
+                "floor": r["floor"], "complex": r["complex"], "built": r["built"], "deal": r["deal"]})
+    return idx, json.loads(SNAP_META.read_text(encoding="utf-8"))
 
 
 def norm_bunji(s):
@@ -342,8 +376,17 @@ def main():
     print(f"  회차 {len(rows)}건 → 매각 물건 {len(items)}건")
 
     print("2) 국토부 실거래가 CSV 수집")
-    files = fetch_molit({i["sido"] for i in items if i["sido"]})
-    idx = load_trades(files)
+    snap = None
+    try:
+        idx = load_trades(fetch_molit(None))
+        save_snapshot(idx)
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        got = load_snapshot()
+        if got is None:
+            raise
+        idx, snap = got
+        print(f"  국토부 사이트에 접속하지 못했습니다({e}).")
+        print(f"  저장된 실거래 스냅샷을 씁니다: {snap['saved_at']} 저장, {snap['rows']:,}건")
 
     print("3) 매칭")
     for it in items:
@@ -371,7 +414,9 @@ def main():
     meta = {
         "collected_at": dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "bid_from": BID_FROM.isoformat(), "bid_to": BID_TO.isoformat(),
-        "trade_from": TRADE_FROM.isoformat(), "trade_to": TRADE_TO.isoformat(),
+        "trade_from": snap["trade_from"] if snap else TRADE_FROM.isoformat(),
+        "trade_to": snap["trade_to"] if snap else TRADE_TO.isoformat(),
+        "trade_snapshot": snap["saved_at"] if snap else None,   # 값이 있으면 저장된 스냅샷으로 매칭한 것
         "rounds": len(rows), "items": len(items), **cnt,
     }
     (DATA / "results.json").write_text(
